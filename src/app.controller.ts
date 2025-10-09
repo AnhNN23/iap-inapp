@@ -1,77 +1,64 @@
-import {
-  Controller,
-  Post,
-  Req,
-  Res,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import type { Request, Response } from 'express';
+import { Controller, Post, Get, Req, Res, HttpStatus, HttpCode } from '@nestjs/common';
+import { Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as jwt from 'jsonwebtoken';
-import axios from 'axios';
 
 @Controller('notifications')
 export class NotificationsController {
-  private readonly logFile = path.join(__dirname, '../../assn-log.txt');
-
-  constructor() {
-    // Tạo file log nếu chưa có
-    if (!fs.existsSync(this.logFile)) {
-      fs.writeFileSync(this.logFile, '', 'utf8');
-    }
-  }
+  private readonly logFile = path.join(__dirname, '../../assn.log');
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  async handleNotifications(@Req() req: Request, @Res() res: Response) {
-    try {
-      const { signedPayload } = req.body;
+  async handleNotifications(@Req() req: any, @Res() res: any) {
+    const now = new Date().toISOString();
+    const reqBody = req.body;
+    const reqHeaders = req.headers;
 
-      if (!signedPayload) {
-        throw new Error('Missing signedPayload');
+    try {
+      const logRequest = `[${now}] Incoming Notification:\nHeaders: ${JSON.stringify(reqHeaders, null, 2)}\nBody: ${JSON.stringify(reqBody, null, 2)}\n`;
+      fs.appendFileSync(this.logFile, logRequest, 'utf8');
+
+      const response = { success: true, receivedAt: now };
+      const logResponse = `[${now}] Response Sent:\n${JSON.stringify(response, null, 2)}\n\n`;
+      fs.appendFileSync(this.logFile, logResponse, 'utf8');
+
+      return res.status(200).json(response);
+    } catch (error: any) {
+      const logError = `[${now}] Error: ${error.message}\n\n`;
+      fs.appendFileSync(this.logFile, logError, 'utf8');
+
+      return res.status(200).json({ success: false, error: error.message });
+    }
+  }
+
+
+  @Get('logs')
+  async getLogs(@Res() res: any) {
+    try {
+      if (!fs.existsSync(this.logFile)) {
+        return res.status(404).json({ message: 'Log file not found' });
       }
 
-      // 1️⃣ Decode header của JWT
-      const [headerB64] = signedPayload.split('.');
-      const header = JSON.parse(Buffer.from(headerB64, 'base64').toString('utf8'));
-      const kid = header.kid;
+      const content = fs.readFileSync(this.logFile, 'utf8');
+      return res
+        .status(200)
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .send(content);
+    } catch (error: any) {
+      return res.status(500).json({ message: 'Failed to read log file', error: error.message });
+    }
+  }
 
-      // 2️⃣ Lấy danh sách public keys của Apple
-      const appleKeysRes = await axios.get(
-        'https://api.storekit.itunes.apple.com/inApps/v1/notifications/keys'
-      );
-      const appleKeys = appleKeysRes.data.keys;
-
-      const key = appleKeys.find((k) => k.keyId === kid);
-      if (!key) throw new Error('Apple public key not found');
-
-      // 3️⃣ Chuyển sang PEM format để verify
-      const publicKey = `-----BEGIN PUBLIC KEY-----\n${key.publicKey}\n-----END PUBLIC KEY-----`;
-
-      // 4️⃣ Verify chữ ký
-      const decoded = jwt.verify(signedPayload, publicKey, { algorithms: ['ES256'] });
-
-      // 5️⃣ Ghi log thông báo
-      const logData =
-        `[${new Date().toISOString()}] Verified ASSN V2 Notification:\n` +
-        JSON.stringify(decoded, null, 2) +
-        '\n\n';
-      fs.appendFileSync(this.logFile, logData, 'utf8');
-
-      console.log('✅ Verified notification:', decoded);
-
-      res.status(200).json({ success: true });
-    } catch (error) {
-      console.error('❌ Verification failed:', error.message);
-
-      const logData =
-        `[${new Date().toISOString()}] Verification failed: ${error.message}\n\n`;
-      fs.appendFileSync(this.logFile, logData, 'utf8');
-
-      // Apple sẽ retry nếu không trả 200
-      res.status(400).json({ error: 'Invalid ASSN notification' });
+  
+  @Post('logs/clear')
+  async clearLogs(@Res() res: any) {
+    try {
+      if (fs.existsSync(this.logFile)) {
+        fs.writeFileSync(this.logFile, '', 'utf8');
+      }
+      return res.status(200).json({ message: 'Log file cleared successfully' });
+    } catch (error: any) {
+      return res.status(500).json({ message: 'Failed to clear log file', error: error.message });
     }
   }
 }
