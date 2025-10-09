@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { NotificationsController } from './app.controller';
-import { AppService } from './app.service';
+import { AppleController } from './apple/apple.controller';
+import { AppleService } from './apple/apple.service';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [],
-  controllers: [NotificationsController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }), 
+  ],
+  controllers: [AppleController],
+  providers: [AppleService],
 })
 export class AppModule {}
